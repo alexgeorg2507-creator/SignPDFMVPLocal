@@ -1,0 +1,22 @@
+{
+  "id": "borisov",
+  "display": "Vadim Borisov / Innowise",
+  "match_markers": [
+    "Innowise",
+    "Vadim Borisov",
+    "Вадим Борисов"
+  ],
+  "company_aliases": [
+    {"language": "en", "value": "Innowise Sp. z o.o (d/b/a Innowise Group)"},
+    {"language": "pl", "value": "Innowise Sp. z o.o (d/b/a Innowise Group)"},
+    {"language": "mk", "value": "Innowise Sp. z o.o (d/b/a Innowise Group)"},
+    {"language": "en", "value": "Innowise Group"},
+    {"language": "pl", "value": "Innowise Sp. z o.o. (dzialajaca jako Innowise Group)"}
+  ],
+  "signer_aliases": [
+    {"language": "en", "value": "Vadim Borisov"},
+    {"language": "pl", "value": "Vadim Borisov"},
+    {"language": "mk", "value": "Вадим Борисов"}
+  ],
+  "updated_at": ""
+}
