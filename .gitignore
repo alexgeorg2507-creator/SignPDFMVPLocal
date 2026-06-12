@@ -1,9 +1,21 @@
+# Секреты и рантайм
 .env
 data/
-test_sig.png
-_trash_part1_fixed.md
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
+
+# OS
 .DS_Store
 *.bak
+test_sig.png
+_trash_part1_fixed.md
+
+# Рабочие промпты (не нужны клиенту)
+TASK_*.md
+
+# НЕ исключать:
+# signfinder-core/ — vendored, должен быть в репо
+# signfinder-api/  — vendored, должен быть в репо

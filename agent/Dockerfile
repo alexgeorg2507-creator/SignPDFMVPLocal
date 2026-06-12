@@ -15,11 +15,11 @@ COPY signfinder-core/ /tmp/signfinder-core/
 RUN pip install --no-cache-dir /tmp/signfinder-core/
 
 # Слой 2: зависимости агента
-COPY SignPDFMVPLocal/agent/requirements.txt .
+COPY agent/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Слой 3: код агента
-COPY SignPDFMVPLocal/agent/app/ ./app/
+COPY agent/app/ ./app/
 
 ENV PORT=9000
 EXPOSE ${PORT}

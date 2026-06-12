@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Context теперь C:\work\ — пути относительно workspace root
-COPY SignPDFMVPLocal/streamlit/requirements.txt .
+COPY streamlit/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # signfinder-core — из локальных исходников (не из GitHub)
@@ -18,7 +18,7 @@ COPY signfinder-core/ /tmp/signfinder-core/
 RUN pip install --no-cache-dir /tmp/signfinder-core/
 
 # Код Streamlit-приложения
-COPY SignPDFMVPLocal/streamlit/ .
+COPY streamlit/ .
 
 # Тесты signfinder-core для запуска через test_runner
 COPY signfinder-core/tests/ /app/sf_tests/
