@@ -1,235 +1,284 @@
-# SignFinder v1.19 — Оптимизация производительности
+# SignFinder v1.19.0 — Оптимизация производительности
 
 Прочитай `C:\work\CLAUDE.md` и `C:\work\signfinder-core\PERFORMANCE_ANALYSIS_v1.18.md`
 перед началом.
+Изменения в signfinder-core: pdf/parser.py, pdf/language.py, signfinder/__init__.py,
+pipeline/settings.py.
+Деплой: --no-cache rebuild всех сервисов.
 
-Изменения только в signfinder-core. Деплой: --no-cache rebuild api.
-
-ВАЖНО: эта версия НЕ меняет функционал, только производительность. Регрессия не
-допустима. После каждой правки — прогон тестового корпуса (русский + PL/MK).
-
----
-
-## Цель
-
-| Сценарий | Текущее | Цель v1.19 |
-|----------|---------|-----------|
-| Применение шаблона | 3700-4800 мс | ≤ 1500 мс |
-| Полный анализ (yellow) | ~15 с | ≤ 10 с |
-
-Возвращаемся к baseline v1.16, не теряя dual-column и multi-signer.
+ОБЯЗАТЕЛЬНО: тайминги — сначала. Делать по шагам, замерять после каждого.
+Регрессия по функционалу недопустима.
 
 ---
 
-## ШАГ 1 — Тайминги в pipeline_debug (СНАЧАЛА, для измерений)
+## ШАГ 1 — Тайминги в pipeline_debug (ИЗМЕРЯЕМ ЧТО ЕСТЬ)
 
-Прежде чем оптимизировать — добавить тайминги, чтобы видеть что РЕАЛЬНО медленное,
-а не строить догадки.
-
-В `signfinder/__init__.py::analyze()` и `pipeline/auto1.py::run_pipeline_auto_1()`
-обернуть ключевые шаги в `time.perf_counter()`:
+Добавить тайминги в `signfinder/__init__.py::SignFinder.analyze()`.
+Используем `time.perf_counter()`.
 
 ```python
 import time
 
-class _Timer:
-    def __init__(self):
-        self.t0 = time.perf_counter()
-        self.spans: dict = {}
-        self._marks: dict = {}
+def analyze(self, pdf_bytes, language=None, filename="document.pdf") -> AnalysisResult:
+    t0 = time.perf_counter()
+    timings = {}
 
-    def mark(self, name: str) -> None:
-        self._marks[name] = time.perf_counter()
+    # ... существующие проверки ...
 
-    def stop(self, name: str) -> None:
-        if name in self._marks:
-            self.spans[f"{name}_ms"] = int((time.perf_counter() - self._marks[name]) * 1000)
+    t_parse = time.perf_counter()
+    doc = parse_pdf_bytes(pdf_bytes, filename=filename)
+    timings["parse_ms"] = int((time.perf_counter() - t_parse) * 1000)
+    timings["langdetect_calls"] = getattr(doc, "_langdetect_calls", 0)
 
-    def total_ms(self) -> int:
-        return int((time.perf_counter() - self.t0) * 1000)
+    t_lang = time.perf_counter()
+    lang = language or detect_language(doc, llm=self.llm)
+    if not lang or lang == "unknown":
+        lang = "ru"
+    timings["detect_lang_ms"] = int((time.perf_counter() - t_lang) * 1000)
+    timings["detect_lang_llm_used"] = timings["detect_lang_ms"] > 200  # LLM = медленно
+
+    # ... fingerprint / matcher ...
+    t_matcher = time.perf_counter()
+    fp = compute_fingerprint(fitz_doc, lang)
+    matcher = find_matching_templates(...)
+    timings["matcher_ms"] = int((time.perf_counter() - t_matcher) * 1000)
+
+    # Шаблонный путь — тайминг total
+    if matcher.traffic_light == "green" and matcher.best_match:
+        timings["total_ms"] = int((time.perf_counter() - t0) * 1000)
+        timings["path"] = "template"
+        result = AnalysisResult(...)
+        result.pipeline_debug["timings_ms"] = timings
+        return result
+
+    # Полный пайплайн
+    t_pipeline = time.perf_counter()
+    pipeline = run_pipeline_auto_1(...)
+    timings["pipeline_ms"] = int((time.perf_counter() - t_pipeline) * 1000)
+    timings["total_ms"] = int((time.perf_counter() - t0) * 1000)
+    timings["path"] = "pipeline"
+
+    result = AnalysisResult(...)
+    result.pipeline_debug["timings_ms"] = timings
+    # Объединить с debug из pipeline
+    result.pipeline_debug.update(pipeline.debug)
+    result.pipeline_debug["timings_ms"] = timings
+    return result
 ```
 
-В analyze() обернуть:
-- parse_pdf_bytes
-- detect_language
-- compute_fingerprint
-- find_matching_templates
-- detect_signer_profile
-- run_pipeline_auto_1 (целиком + внутри step3/step4/step5)
-
-Результат класть в `pipeline_debug["timings_ms"]` (если pipeline ran) или в
-`AnalysisResult.pipeline_debug` всегда.
-
-Дополнительно — счётчик langdetect-вызовов в parse_pdf_bytes:
+Счётчик langdetect в parser.py — добавить поле в ParsedDocument:
 ```python
-langdetect_calls_count: int = 0
-detect_lang_llm_used: bool = False
+@dataclass
+class ParsedDocument:
+    ...
+    _langdetect_calls: int = 0  # служебное поле для профилирования
 ```
+И инкрементировать при каждом вызове `detect()`.
 
-Это даст точную картину для последующих шагов.
+После деплоя — прогнать 6 PL/MK документов пакетом, посмотреть
+`pipeline_debug.timings_ms` в каждом debug JSON. Записать базовые цифры.
 
 ---
 
-## ШАГ 2 — Убрать LLM detect_language из шаблонного пути
+## ШАГ 2 — Убрать LLM из шаблонного пути (ГЛАВНАЯ ПРОБЛЕМА)
 
-`signfinder/pdf/language.py::detect_language()` сейчас вызывает LLM если langdetect
-дал не-supported код. Для шаблонного пути это лишнее: matcher работает по fingerprint,
-а не по точному коду языка.
+### Что происходит сейчас
 
-### Решение
+В `analyze()`:
+```python
+lang = language or detect_language(doc, llm=self.llm)
+```
 
-Разделить функцию на две:
+`detect_language(doc, llm=self.llm)` вызывается ДО matcher. Если langdetect
+вернул `bg`/`hr`/`sl` (каша mk+en) — уходит в `_llm_detect()` — 2-3 секунды.
+Это происходит ДАЖЕ для шаблонного пути (где LLM не нужен вообще).
+
+### Фикс: разделить быстрый и точный detect
+
+В `pdf/language.py` добавить быструю версию без LLM:
 
 ```python
 def detect_language_fast(doc) -> str:
-    """Быстрая детекция БЕЗ LLM. Возвращает langdetect-код или 'unknown'."""
+    """Быстрая детекция БЕЗ LLM. Для шаблонного пути.
+
+    Возвращает поддерживаемый код если langdetect его распознал,
+    иначе — что бы langdetect ни вернул (bg, hr...) — возвращаем как есть.
+    Для matcher язык нужен только как метка (fingerprint), точность не критична.
+    """
     parser_lang = (getattr(doc, "language", "") or "").lower()[:2]
-    if parser_lang in SUPPORTED:
-        return parser_lang
-    # Не в supported (mk-каша определилась как bg/hr) — возвращаем как есть
     return parser_lang if parser_lang else "unknown"
-
-
-def detect_language(doc, llm: Optional[LLMClient] = None) -> str:
-    """Полная детекция С LLM fallback. Только для пайплайна."""
-    # ... существующий код без изменений
 ```
 
-### Обновить analyze() — вызывать fast-версию ДО matcher
+В `signfinder/__init__.py::analyze()` изменить порядок:
 
 ```python
-def analyze(...) -> AnalysisResult:
-    doc = parse_pdf_bytes(pdf_bytes, filename=filename)
+# БЫСТРАЯ детекция — для matcher достаточно языковой метки
+lang_fast = language or detect_language_fast(doc)
+if not lang_fast or lang_fast == "unknown":
+    lang_fast = "ru"
 
-    # БЫСТРАЯ детекция — для matcher достаточно
-    lang_fast = language or detect_language_fast(doc)
-    if not lang_fast or lang_fast == "unknown":
-        lang_fast = "ru"
+# fingerprint + matcher работают на lang_fast (не нужна LLM-точность)
+fp = compute_fingerprint(fitz_doc, lang_fast)
+matcher = find_matching_templates(fitz_doc, lang_fast, storage=self.storage, fingerprint=fp)
 
-    # fingerprint + matcher работают на lang_fast
-    fp = compute_fingerprint(fitz_doc, lang_fast)
-    matcher = find_matching_templates(fitz_doc, lang_fast, ...)
-
-    # Шаблонный путь — выходим БЕЗ LLM-вызова detect_language
-    if matcher.traffic_light == "green" and matcher.best_match:
+# ШАБЛОННЫЙ ПУТЬ: выходим БЕЗ LLM-вызова detect_language
+if matcher.traffic_light == "green" and matcher.best_match:
+    tpl = load_template(self.storage, matcher.best_match.template_id)
+    if tpl is not None:
         ...
-        return AnalysisResult(traffic_light="green", ...)
+        return AnalysisResult(traffic_light="green", ...)  # ← LLM не вызывался
 
-    # Только в полном пайплайне — точная детекция с LLM fallback
-    lang = detect_language(doc, llm=self.llm) if lang_fast not in SUPPORTED else lang_fast
+# ТОЛЬКО для полного пайплайна — точная детекция с LLM fallback при необходимости
+lang = language or detect_language(doc, llm=self.llm)
+if not lang or lang == "unknown":
+    lang = lang_fast  # fallback на быстрый результат, не на "ru"
 
-    pipeline = run_pipeline_auto_1(doc=doc, language=lang, ...)
+pipeline = run_pipeline_auto_1(doc=doc, language=lang, ...)
 ```
 
-**Ожидаемый эффект:** шаблонный путь -2-3 с.
+ВАЖНО: шаблонному пути нужен lang только для fingerprint (поле в FingerprintData)
+и для find_matching_templates. Матчинг идёт по simhash/jaccard/cosine — не по языку.
+Язык в fingerprint — это метаданные для фильтрации, а не ключ матчинга.
+Если matcher нашёл шаблон с lang="bg" и исходный шаблон был lang="mk" — они
+матчатся по fingerprint, не по строке языка. Безопасно.
+
+Ожидаемый выигрыш: шаблонный путь -2.5 с (LLM-вызов исчезает полностью).
 
 ---
 
 ## ШАГ 3 — Кэш langdetect в parse_pdf_bytes
 
-Сейчас `langdetect.detect()` зовётся 2N+1 раз для dual-column документа из N страниц.
-Достаточно 1-2 вызова на документ:
+### Что происходит сейчас
 
-### Решение
-
-В `parse_pdf_bytes()`:
-1. Определить язык документа ОДИН РАЗ по полному тексту (как раньше).
-2. Для dual-column страниц — определить языки колонок ТОЛЬКО на ПЕРВОЙ dual-странице,
-   запомнить mapping (язык_левой, язык_правой), применить ко всем остальным dual-страницам.
-
+В `pdf/parser.py::parse_pdf_bytes()`, в цикле по страницам:
 ```python
-cached_left_lang: str | None = None
-cached_right_lang: str | None = None
-
-for page_num, page in enumerate(doc):
-    words_raw = page.get_text("words")
-    pw = page.rect.width
-    gutter = _detect_gutter(words_raw, pw)
-
-    if gutter:
-        left_text = _build_column_text(words_raw, x_max=gutter)
-        right_text = _build_column_text(words_raw, x_min=gutter)
-        page_text = left_text + "\n---\n" + right_text
-
-        # Детектим язык колонок ТОЛЬКО ОДНАЖДЫ
-        if cached_left_lang is None:
-            try:
-                cached_left_lang = _detect(left_text[:500]) if left_text.strip() else "unknown"
-            except Exception:
-                cached_left_lang = "unknown"
-            try:
-                cached_right_lang = _detect(right_text[:500]) if right_text.strip() else "unknown"
-            except Exception:
-                cached_right_lang = "unknown"
-
-        page_langs = list(dict.fromkeys([cached_left_lang, cached_right_lang]))
-        p_layout = "dual_column_vertical"
-    else:
-        page_text = page.get_text()
-        page_langs = []
-        p_layout = "single_column"
-        gutter = None
-    ...
+if gutter:
+    # для КАЖДОЙ dual-страницы:
+    lang_left = detect(left_text[:500])
+    lang_right = detect(right_text[:500])
 ```
 
-**Ожидаемый эффект:** parse_pdf_bytes для 6-стр dual-документа: ~1500 мс → ~400 мс.
+Agreement (6 стр, все dual) = 12 вызовов langdetect + 1 финальный = 13.
+Первый вызов langdetect в процессе — ленивая загрузка профилей (~300-500 мс).
+
+### Фикс: кэшировать языки колонок
+
+```python
+# В parse_pdf_bytes, ДО цикла:
+cached_col_langs: tuple[str, str] | None = None
+langdetect_call_count = 0
+
+# В цикле, в ветке if gutter:
+if cached_col_langs is None:
+    # Первая dual-страница — детектируем
+    try:
+        ll = _detect_safe(left_text[:500])
+        lr = _detect_safe(right_text[:500])
+        cached_col_langs = (ll, lr)
+        langdetect_call_count += 2
+    except Exception:
+        cached_col_langs = ("unknown", "unknown")
+lang_left, lang_right = cached_col_langs
+```
+
+Добавить хелпер:
+```python
+def _detect_safe(text: str) -> str:
+    try:
+        from langdetect import detect
+        return detect(text) if text.strip() else "unknown"
+    except Exception:
+        return "unknown"
+```
+
+Для финального языка документа (по full_text) — один вызов как и был.
+
+Итог: Agreement 13 вызовов → 3 (2 для первой dual-страницы + 1 финальный).
 
 ---
 
-## ШАГ 4 — Кэш markers/profile per-analyze
+## ШАГ 4 — Кэш markers/profile per-analyze (TTL 60 сек)
 
-`load_markers()` и `load_signer_profile_by_id()` читают JSON-файлы с диска при каждом
-вызове `get_markers_for_language()`, `get_aliases_for_language()`. За один пайплайн
-это 3-5 чтений одного файла.
+В `pipeline/settings.py` сейчас `get_markers_for_language()` и
+`load_signer_profile_by_id()` читают JSON с диска при каждом вызове.
+За один пайплайн это 3-5 чтений одного файла.
 
-### Решение
-
-Добавить простой кэш на уровень модуля settings.py с инвалидацией по mtime
-(или TTL 60с — проще).
+Добавить модульный кэш с TTL:
 
 ```python
-_markers_cache: tuple[float, dict] | None = None
-_profiles_cache: dict[str, tuple[float, dict]] = {}
+import time as _time
+_CACHE: dict[str, tuple[float, Any]] = {}
+_TTL = 60.0  # секунды
 
-def load_markers(storage):
-    global _markers_cache
-    now = time.time()
-    if _markers_cache and now - _markers_cache[0] < 60:
-        return _markers_cache[1]
-    # ... существующий код чтения
-    _markers_cache = (now, result)
+
+def _cached(key: str, loader, *args):
+    """Кэш с TTL=60с. key должен включать все параметры влияющие на результат."""
+    now = _time.monotonic()
+    if key in _CACHE and now - _CACHE[key][0] < _TTL:
+        return _CACHE[key][1]
+    result = loader(*args)
+    _CACHE[key] = (now, result)
     return result
 ```
 
-Аналогично для `load_signer_profile_by_id`.
+Применить к `load_markers` и `load_signer_profile_by_id`:
 
-ВАЖНО: кэш TTL короткий (60с), не вечный. Чтобы изменения через UI применялись
-к следующему analyze() без перезапуска.
+```python
+def get_markers_for_language(storage, language: str) -> dict:
+    def _load():
+        # ... существующий код ...
+    return _cached(f"markers:{language}", _load)
 
-**Ожидаемый эффект:** -100-200 мс на пайплайн.
+
+def load_signer_profile_by_id(storage, signer_id: str) -> dict:
+    def _load():
+        # ... существующий код ...
+    return _cached(f"profile:{signer_id}", _load)
+```
+
+ВАЖНО: TTL=60с означает что изменения через UI применятся максимум через 60 сек.
+Это приемлемо. Если нужно немедленно — `_CACHE.clear()` после PUT-запроса
+в соответствующем API-роутере (необязательно, можно оставить TTL).
 
 ---
 
 ## ШАГ 5 — Ограничить step4 паттерны
 
-Сейчас для dual-column LLM генерирует 31-46 паттернов из мёрженных маркеров двух
-языков. Большинство — дублирующие комбинации.
+В `pipeline/auto1.py`, в функции step4 или в вызове format_generate_regex,
+добавить в промпт явное ограничение числа паттернов.
 
-### Решение
-
-В промпте step4 (`signfinder/prompts/regex_generation.py` или где он живёт) добавить
-явное ограничение:
+В `signfinder/prompts/regex_generation.py` (или где format_generate_regex):
+найти строку формирующую промпт и добавить:
 
 ```
-ВАЖНО: верни НЕ БОЛЕЕ 15 наиболее вероятных паттернов. Не плоди декартовы
-произведения marker_words × underline_patterns — сгенерируй только те которые
-реалистично встретятся в этом конкретном документе.
+ВАЖНО: верни НЕ БОЛЕЕ 15 паттернов — только наиболее характерные для
+ЭТОГО конкретного документа. Не генерируй декартово произведение всех
+вариантов подчёркиваний × все маркеры. Предпочти 1-2 точных паттерна
+10 похожим.
 ```
 
-Плюс детерминированный пост-фильтр после LLM — убрать паттерны которые
-семантически дублируются (одинаковая структура, разные слова из одного списка).
+И детерминированный постфильтр после получения паттернов от LLM:
 
-**Ожидаемый эффект:** step4 LLM с 3 с до 1.5 с.
+```python
+def _deduplicate_patterns(patterns: list[str], max_count: int = 20) -> list[str]:
+    """Убрать семантические дубли и ограничить число паттернов."""
+    seen_normalized = set()
+    result = []
+    for p in patterns:
+        # Нормализация: убрать пробелы, нижний регистр для сравнения
+        norm = re.sub(r'\s+', '', p.lower())
+        if norm not in seen_normalized:
+            seen_normalized.add(norm)
+            result.append(p)
+        if len(result) >= max_count:
+            break
+    return result
+```
+
+Вызвать после получения final_patterns в run_pipeline_auto_1:
+```python
+final_patterns = _deduplicate_patterns(final_patterns, max_count=20)
+```
 
 ---
 
@@ -238,36 +287,56 @@ def load_markers(storage):
 ```powershell
 cd C:\work\signfinder-core
 git add -A
-git commit -m "v1.19.0: performance optimizations (timings, fast lang detect, caches)"
+git commit -m "v1.19.0: performance — no LLM in template path, langdetect cache, marker/profile cache"
 git push origin main
 
 cd C:\work\SignPDFMVPLocal
-docker compose build --no-cache api
-docker compose up -d --force-recreate api
+docker compose build --no-cache
+docker compose up -d --force-recreate
 docker compose logs api 2>&1 | Select-String "Core v"
 ```
 
-Bump: core `__init__.py` + `pyproject.toml` → 1.19.0, CLAUDE.md.
+Bump: core `__init__.py` → 1.19.0, `pyproject.toml` → 1.19.0, CLAUDE.md.
+
+---
+
+## Целевые показатели (из PERFORMANCE_ANALYSIS_v1.18.md)
+
+| Сценарий | Текущее | Цель |
+|----------|---------|------|
+| Шаблонный путь (1-4 стр) | 3700-4800 мс | ≤ 1500 мс |
+| Шаблонный путь (Amendment dup) | 4777 мс | ≤ 1200 мс |
+| Полный анализ (yellow) | ~15 с | ≤ 10 с |
 
 ---
 
 ## Контроль регрессии
 
-ОБЯЗАТЕЛЬНО прогнать весь корпус ДО и ПОСЛЕ:
-- Русские договора (5+): шаблон применяется как раньше, anchors на месте
-- PL/MK 6 документов: dual-column работает, профиль borisov определяется
-- Замеры в `pipeline_debug.timings_ms`:
-  - parse_pdf_bytes < 500 мс для 6 стр
-  - detect_lang_llm_used == false для шаблонного пути
-  - total_ms < 1500 мс для шаблонного пути
-  - total_ms < 10000 мс для полного пайплайна
+После каждого шага — прогон 6 PL/MK + 5 RU через пакетную обработку.
+В debug JSON смотреть `timings_ms`:
 
-Если регрессия по функционалу — откат, разбираемся пошагово.
+```json
+{
+  "timings_ms": {
+    "parse_ms": 250,
+    "detect_lang_ms": 5,          ← после Шага 2: не 2500
+    "detect_lang_llm_used": false, ← для шаблонного пути
+    "matcher_ms": 600,
+    "pipeline_ms": 8000,           ← только для yellow
+    "total_ms": 1200,              ← шаблонный путь
+    "langdetect_calls": 3,         ← после Шага 3: не 13
+    "path": "template"
+  }
+}
+```
+
+Если регрессия по функционалу (шаблон не применяется, подписи уехали) —
+откат через git revert, разбираем точечно.
 
 ---
 
 ## Стиль
 
 Коротко, технично, по-русски. Файлы на диск, не в чат.
-Сначала Шаг 1 (тайминги) — измеряем что есть. Потом Шаги 2-5 по одному с замерами
-после каждого. Не делать всё разом — потеряем причинно-следственную связь.
+Шаги строго по порядку: 1 (тайминги) → замерить → 2 → замерить → 3 → ... →
+Не делать всё разом.

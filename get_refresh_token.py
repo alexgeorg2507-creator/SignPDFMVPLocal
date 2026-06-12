@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""One-shot helper: получить refresh_token для OAuth2 через localhost redirect.
+# -*- coding: utf-8 -*-
+"""One-shot helper: get refresh_token for OAuth2 via localhost redirect.
 
-Использование:
-    python get_refresh_token.py --provider google \
-        --client-id YOUR_CLIENT_ID \
+Usage:
+    python get_refresh_token.py --provider google
+        --client-id YOUR_CLIENT_ID
         --client-secret YOUR_CLIENT_SECRET
 
-Поддерживаемые провайдеры: google, microsoft, yandex, mailru, rambler
-Только stdlib + браузер.
+Providers: google, microsoft, yandex, mailru, rambler
+Only stdlib + browser required.
 """
 from __future__ import annotations
 
 import argparse
 import http.server
 import json
-import os
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -62,7 +62,7 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
             _auth_code.append(code)
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b"<h2>OK. Закрой эту вкладку и вернись в терминал.</h2>")
+            self.wfile.write(b"<h2>OK. Close this tab and return to terminal.</h2>")
         else:
             self.send_response(400)
             self.end_headers()
@@ -90,14 +90,15 @@ def main():
     })
     auth_url = f"{prov['auth_url']}?{auth_params}"
 
-    print(f"\nОткрываю браузер: {auth_url}\n")
+    print(f"\nOpening browser: {auth_url}\n")
     webbrowser.open(auth_url)
 
+    print("Waiting for redirect on http://localhost:8080/callback ...")
     server = http.server.HTTPServer(("localhost", REDIRECT_PORT), _CallbackHandler)
     server.handle_request()
 
     if not _auth_code:
-        print("Код авторизации не получен.")
+        print("ERROR: no authorization code received.")
         return
 
     code = _auth_code[0]
@@ -115,15 +116,15 @@ def main():
 
     refresh_token = payload.get("refresh_token", "")
     if not refresh_token:
-        print("Ошибка: refresh_token отсутствует в ответе.")
+        print("ERROR: refresh_token missing from response.")
         print(json.dumps(payload, indent=2))
         return
 
     print("\n" + "=" * 60)
-    print("refresh_token:")
+    print("YOUR REFRESH TOKEN:")
     print(refresh_token)
     print("=" * 60)
-    print("\nВставь это значение в Настройки → Mail → OAuth2 → Refresh Token")
+    print("\nPaste this into Settings -> Mail -> OAuth2 -> Refresh Token")
 
 
 if __name__ == "__main__":
