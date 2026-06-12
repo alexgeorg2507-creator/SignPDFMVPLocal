@@ -1,0 +1,92 @@
+services:
+
+  api:
+    build:
+      context: ..
+      dockerfile: SignPDFMVPLocal/api/Dockerfile
+    container_name: signfinder-api
+    restart: unless-stopped
+    environment:
+      STORAGE_MODE: local
+      STORAGE_PATH: /data
+      JOBS_STORAGE_PATH: /jobs
+      API_KEY: ${API_KEY}
+      ENVIRONMENT: local
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CLOUD_TASKS_ENABLED: "false"
+      INTERNAL_TOKEN: local_only
+      LLM_CONFIG_PATH: /data/llm_config.json
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AGENT_URL: http://agent:9000
+    volumes:
+      - ./data/api:/data
+      - ./data/jobs:/jobs
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  streamlit:
+    build:
+      context: ..
+      dockerfile: SignPDFMVPLocal/streamlit/Dockerfile
+    container_name: signfinder-streamlit
+    restart: unless-stopped
+    environment:
+      SIGNFINDER_API_URL: http://api:8000
+      SIGNFINDER_API_KEY: ${API_KEY}
+      ACCESS_CODE: ${ACCESS_CODE}
+      API_URL: http://api:8000
+      AGENT_DATA_DIR: /app/agent_data
+    volumes:
+      - ./data/streamlit-config:/app/config
+      - ./data/api/agent:/app/agent_data
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  agent:
+    build:
+      context: ..
+      dockerfile: SignPDFMVPLocal/agent/Dockerfile
+    container_name: signfinder-agent
+    restart: unless-stopped
+    environment:
+      SIGNFINDER_API_URL: http://api:8000
+      SIGNFINDER_API_KEY: ${API_KEY}
+      SIGNER_ID: default
+      DATA_PATH: /data
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:-}
+      IMAP_SSL: ${IMAP_SSL:-true}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FOLDER_IN: ${FOLDER_IN:-SignfinderIn}
+      FOLDER_GREEN: ${FOLDER_GREEN:-SignfinderGreen}
+      FOLDER_YELLOW: ${FOLDER_YELLOW:-SignfinderYellow}
+      FOLDER_RED: ${FOLDER_RED:-SignfinderRed}
+      FOLDER_ARCHIVE: ${FOLDER_ARCHIVE:-SignfinderArchive}
+      POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-300}
+      REPLY_TO_SENDER: ${REPLY_TO_SENDER:-false}
+      LOG_MAX_ENTRIES: ${LOG_MAX_ENTRIES:-1000}
+    volumes:
+      - ./data/api:/data
+    ports:
+      - "9000:9000"
+    depends_on:
+      api:
+        condition: service_healthy

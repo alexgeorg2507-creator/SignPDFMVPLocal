@@ -1,0 +1,9 @@
+.env
+data/
+test_sig.png
+_trash_part1_fixed.md
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.bak
