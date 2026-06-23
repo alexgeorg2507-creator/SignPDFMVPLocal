@@ -50,16 +50,19 @@ class SignFinderAPIClient:
         pdf_bytes: bytes,
         language: Optional[str] = None,
         filename: str = "document.pdf",
+        with_review: bool = False,
     ) -> dict:
         """POST /v1/analyze → AnalysisResponse dict.
 
         Возвращает: {traffic_light, anchors, matches, matched_template,
-                     applied_template_id, our_side, error, pipeline_debug}
+                     applied_template_id, our_side, error, pipeline_debug, review}
         """
         files = {"file": (filename, pdf_bytes, "application/pdf")}
         data: dict = {}
         if language:
             data["language"] = language
+        if with_review:
+            data["with_review"] = "true"
         with httpx.Client(timeout=self.timeout) as c:
             resp = c.post(self._url("/analyze"), headers=self._headers, files=files, data=data)
         self._raise(resp)
@@ -86,6 +89,27 @@ class SignFinderAPIClient:
         with httpx.Client(timeout=self.timeout * 5) as c:
             resp = c.post(self._url("/analyze/batch"), headers=self._headers,
                           files=multipart, data=form)
+        self._raise(resp)
+        return resp.json()
+
+    def review(
+        self,
+        pdf_bytes: bytes,
+        language: Optional[str] = None,
+        filename: str = "document.pdf",
+    ) -> dict:
+        """POST /v1/review → ReviewResponse dict.
+
+        Ревью договора БЕЗ поиска подписи.
+        Возвращает: {traffic_light, summary, findings: [{axis, severity, note, clause}],
+                     error, truncated}
+        """
+        files = {"file": (filename, pdf_bytes, "application/pdf")}
+        data: dict = {}
+        if language:
+            data["language"] = language
+        with httpx.Client(timeout=self.timeout) as c:
+            resp = c.post(self._url("/review"), headers=self._headers, files=files, data=data)
         self._raise(resp)
         return resp.json()
 

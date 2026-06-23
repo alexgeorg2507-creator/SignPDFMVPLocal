@@ -300,6 +300,68 @@ def _save_template():
         sys.stderr.write(f"[auto_sign] _save_template: {e}\n")
 
 
+def _render_review(review: dict | None) -> None:
+    """Отрисовать второй светофор (ревью договора). Информационно, не блокирует."""
+    if not review:
+        return
+
+    tl = review.get("traffic_light", "yellow")
+    err = review.get("error")
+
+    # Заголовок секции
+    st.divider()
+    st.subheader(t("review_section"))
+
+    if err:
+        st.warning(t("review_error", err=err))
+        return
+
+    # Светофор ревью
+    tl_label = {
+        "green":  t("review_tl_green"),
+        "yellow": t("review_tl_yellow"),
+        "red":    t("review_tl_red"),
+    }.get(tl, t("review_tl_yellow"))
+
+    if tl == "green":
+        st.success(tl_label)
+    elif tl == "red":
+        st.error(tl_label)
+    else:
+        st.warning(tl_label)
+
+    # Заключение
+    summary = review.get("summary", "")
+    if summary:
+        st.caption(f"{t('review_summary')} {summary}")
+
+    if review.get("truncated"):
+        st.caption(t("review_truncated"))
+
+    # Замечания
+    findings = review.get("findings", [])
+    if not findings:
+        st.caption(t("review_no_findings"))
+        return
+
+    axis_label = {
+        "parties": t("axis_parties"), "subject": t("axis_subject"),
+        "term": t("axis_term"), "payment": t("axis_payment"),
+        "liability": t("axis_liability"), "signatures": t("axis_signatures"),
+        "contradiction": t("axis_contradiction"), "other": t("axis_other"),
+    }
+    sev_icon = {"critical": "🔴", "warning": "🟡", "info": "ℹ️"}
+
+    for f in findings:
+        axis = axis_label.get(f.get("axis", "other"), f.get("axis", ""))
+        sev = f.get("severity", "info")
+        icon = sev_icon.get(sev, "ℹ️")
+        note = f.get("note", "")
+        clause = f.get("clause")
+        clause_txt = f" ({t('review_clause')} {clause})" if clause else ""
+        st.markdown(f"{icon} **{axis}**{clause_txt}: {note}")
+
+
 def _render_debug_export_block() -> None:
     if not st.session_state.get("auto_doc"):
         return
@@ -416,6 +478,12 @@ uploaded = st.file_uploader(
     label_visibility="collapsed" if _doc_loaded else "visible",
 )
 
+with_review = st.toggle(
+    t("review_toggle"),
+    help=t("review_toggle_help"),
+    key="with_review",
+)
+
 if uploaded is not None and st.session_state.get("auto_doc_name") != uploaded.name:
     _reset_pipeline()
     st.session_state["auto_doc_name"] = uploaded.name
@@ -450,7 +518,10 @@ if uploaded is not None and st.session_state.get("auto_doc_name") != uploaded.na
             st.write(t("step_analysis"))
             try:
                 client = get_api_client()
-                result = client.analyze(doc.pdf_bytes, language=lang, filename=uploaded.name)
+                result = client.analyze(
+                    doc.pdf_bytes, language=lang, filename=uploaded.name,
+                    with_review=with_review,
+                )
                 st.session_state["auto_analyze_result"] = result
 
                 tl = result.get("traffic_light", "no_match")
@@ -536,6 +607,8 @@ if "auto_analyze_result" in st.session_state and "all_anchors" in st.session_sta
             _reset_pipeline()
             st.session_state["upload_counter"] += 1
             st.rerun()
+
+    _render_review(ar.get("review"))
 
 _render_debug_export_block()
 

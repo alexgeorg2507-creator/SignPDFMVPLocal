@@ -240,6 +240,36 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tab_llm":              {"ru": "🤖 LLM",           "en": "🤖 LLM"},
     "tab_mail":             {"ru": "📧 Mail",           "en": "📧 Mail"},
     "tab_testing":          {"ru": "🧪 Тестирование",  "en": "🧪 Testing"},
+
+    # ── PRE-FLIGHT РЕВЬЮ (v1.20) ──────────────────────────────────────────
+    "review_section":       {"ru": "📋 Ревью договора", "en": "📋 Contract review"},
+    "review_toggle":        {"ru": "Проверить договор перед подписанием",
+                             "en": "Review contract before signing"},
+    "review_toggle_help":   {"ru": "Дополнительная проверка через ИИ: целостность договора, "
+                                   "замечания юриста. Это доп. запрос к LLM.",
+                             "en": "Extra AI check: contract integrity, lawyer-style notes. "
+                                   "This is an additional LLM request."},
+    "review_running":       {"ru": "Проверяю договор...", "en": "Reviewing contract..."},
+    "review_tl_green":      {"ru": "🟢 Договор целостен", "en": "🟢 Contract is sound"},
+    "review_tl_yellow":     {"ru": "🟡 Есть замечания",   "en": "🟡 Has remarks"},
+    "review_tl_red":        {"ru": "🔴 Серьёзные замечания", "en": "🔴 Serious remarks"},
+    "review_no_findings":   {"ru": "Замечаний нет.",     "en": "No remarks."},
+    "review_summary":       {"ru": "Заключение:",         "en": "Summary:"},
+    "review_truncated":     {"ru": "⚠️ Большой документ — проверены начало и конец.",
+                             "en": "⚠️ Large document — start and end reviewed."},
+    "review_error":         {"ru": "Ревью недоступно: {err}", "en": "Review unavailable: {err}"},
+    "review_clause":        {"ru": "пункт",   "en": "clause"},
+    "sev_critical":         {"ru": "критично", "en": "critical"},
+    "sev_warning":          {"ru": "внимание", "en": "warning"},
+    "sev_info":             {"ru": "инфо",      "en": "info"},
+    "axis_parties":         {"ru": "Стороны",         "en": "Parties"},
+    "axis_subject":         {"ru": "Предмет",         "en": "Subject"},
+    "axis_term":            {"ru": "Сроки",           "en": "Term"},
+    "axis_payment":         {"ru": "Расчёты",         "en": "Payment"},
+    "axis_liability":       {"ru": "Ответственность", "en": "Liability"},
+    "axis_signatures":      {"ru": "Подписи",         "en": "Signatures"},
+    "axis_contradiction":   {"ru": "Противоречия",    "en": "Contradictions"},
+    "axis_other":           {"ru": "Прочее",          "en": "Other"},
 }
 
 
