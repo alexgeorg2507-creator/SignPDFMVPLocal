@@ -94,7 +94,7 @@ def _route_result(result, mailbox, queue_index, activity_log) -> None:
             "documents": [
                 {"name": d.name, "template": d.template, "score": d.score,
                  "light": d.light, "anchor_count": d.anchor_count,
-                 "anchors": d.anchors, "error": d.error}
+                 "anchors": d.anchors, "error": d.error, "review": d.review}
                 for d in result.docs
             ],
         }

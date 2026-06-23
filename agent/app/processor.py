@@ -17,6 +17,7 @@ from typing import Optional
 import httpx
 
 from app.config import (
+    AGENT_REVIEW,
     FOLDER_GREEN,
     FOLDER_RED,
     FOLDER_YELLOW,
@@ -45,6 +46,7 @@ class DocResult:
     anchors: list = field(default_factory=list)
     signed_pdf: Optional[bytes] = None
     error: Optional[str] = None
+    review: Optional[dict] = None   # pre-flight ревью (v1.20)
 
 
 @dataclass
@@ -57,11 +59,15 @@ class ProcessingResult:
     error: Optional[str] = None
 
 
-def _api_analyze(pdf_bytes: bytes, filename: str) -> dict:
+def _api_analyze(pdf_bytes: bytes, filename: str, with_review: bool = False) -> dict:
     url = f"{SIGNFINDER_API_URL}/v1/analyze"
+    data = {}
+    if with_review:
+        data["with_review"] = "true"
     with httpx.Client(timeout=_TIMEOUT_ANALYZE) as c:
         resp = c.post(url, headers=_API_HEADERS,
-                      files={"file": (filename, pdf_bytes, "application/pdf")})
+                      files={"file": (filename, pdf_bytes, "application/pdf")},
+                      data=data)
         resp.raise_for_status()
     return resp.json()
 
@@ -155,7 +161,7 @@ def process_message(msg) -> ProcessingResult:
             _save_original(uid, pdf_name, pdf_bytes)
 
             logger.info("uid=%s: analyze %s", uid, pdf_name)
-            analysis = _api_analyze(pdf_bytes, pdf_name)
+            analysis = _api_analyze(pdf_bytes, pdf_name, with_review=AGENT_REVIEW)
             light = analysis.get("traffic_light", "no_match")
             mt = analysis.get("matched_template") or {}
             anchors = analysis.get("anchors") or []
@@ -178,6 +184,7 @@ def process_message(msg) -> ProcessingResult:
                 template=mt.get("best_match_template_id") or "",
                 score=mt.get("best_match_score"), anchor_count=len(anchors),
                 anchors=anchors, signed_pdf=signed_pdf, error=analysis.get("error"),
+                review=analysis.get("review"),
             ))
 
         except Exception as e:
@@ -233,6 +240,51 @@ _LIGHT_LABEL = {
     "no_match": "🔴 Ошибка обработки",
 }
 
+_REVIEW_LIGHT_LABEL = {
+    "green": "🟢 Договор целостен",
+    "yellow": "🟡 Есть замечания",
+    "red": "🔴 Серьёзные замечания",
+}
+
+_AXIS_LABEL = {
+    "parties": "Стороны", "subject": "Предмет", "term": "Сроки",
+    "payment": "Расчёты", "liability": "Ответственность",
+    "signatures": "Подписи", "contradiction": "Противоречия", "other": "Прочее",
+}
+
+_SEV_ICON = {"critical": "🔴", "warning": "🟡", "info": "ℹ️"}
+
+
+def _format_review(review: Optional[dict]) -> list[str]:
+    """Сформировать строки замечаний по договору для письма."""
+    if not review:
+        return []
+    err = review.get("error")
+    if err:
+        return [f"   📋 Ревью: недоступно ({err})"]
+
+    lines = []
+    tl = review.get("traffic_light", "yellow")
+    lines.append(f"   📋 Ревью: {_REVIEW_LIGHT_LABEL.get(tl, tl)}")
+
+    summary = review.get("summary", "")
+    if summary:
+        lines.append(f"      {summary}")
+
+    findings = review.get("findings", [])
+    for f in findings:
+        axis = _AXIS_LABEL.get(f.get("axis", "other"), f.get("axis", ""))
+        icon = _SEV_ICON.get(f.get("severity", "info"), "ℹ️")
+        note = f.get("note", "")
+        clause = f.get("clause")
+        clause_txt = f" (п. {clause})" if clause else ""
+        lines.append(f"      {icon} {axis}{clause_txt}: {note}")
+
+    if review.get("truncated"):
+        lines.append("      ⚠️ Большой документ — проверены начало и конец.")
+
+    return lines
+
 
 def build_email_body(subject: str, docs: list[DocResult]) -> str:
     lines = [f'SignFinder обработал документы из письма "{subject}".\n']
@@ -246,6 +298,7 @@ def build_email_body(subject: str, docs: list[DocResult]) -> str:
             lines.append(f"   Мест подписи: {doc.anchor_count}")
         if doc.error:
             lines.append(f"   ⚠️ {doc.error}")
+        lines.extend(_format_review(doc.review))
         lines.append("")
     lines.append(f"Обработано: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     return "\n".join(lines)

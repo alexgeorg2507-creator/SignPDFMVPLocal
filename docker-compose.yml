@@ -79,6 +79,7 @@ services:
       POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-300}
       REPLY_TO_SENDER: ${REPLY_TO_SENDER:-false}
       LOG_MAX_ENTRIES: ${LOG_MAX_ENTRIES:-1000}
+      AGENT_REVIEW: ${AGENT_REVIEW:-true}
     volumes:
       - ./data/api:/data
     ports:

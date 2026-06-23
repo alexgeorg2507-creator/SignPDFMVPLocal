@@ -32,6 +32,9 @@ FOLDER_ARCHIVE: str = os.environ.get("FOLDER_ARCHIVE", "SignfinderArchive")
 POLL_INTERVAL_SEC: int = int(os.environ.get("POLL_INTERVAL_SEC", "300"))
 REPLY_TO_SENDER: bool = os.environ.get("REPLY_TO_SENDER", "false").lower() == "true"
 LOG_MAX_ENTRIES: int = int(os.environ.get("LOG_MAX_ENTRIES", "1000"))
+# Pre-flight ревью договора (v1.20): по умолчанию включено — клиент получает
+# подпись + замечания юриста в одном письме. Доп. LLM-вызов на каждый документ.
+AGENT_REVIEW: bool = os.environ.get("AGENT_REVIEW", "true").strip().lower() in ("true", "1", "yes")
 
 # Хранилище
 DATA_PATH: str = os.environ.get("DATA_PATH", "/data")
