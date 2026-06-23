@@ -5,9 +5,10 @@ import os
 import requests
 import streamlit as st
 
+from core.i18n import t
 
 if not st.session_state.get("auth"):
-    st.warning("Войдите через главную страницу.")
+    st.warning(t("warn_login_required"))
     st.stop()
 
 try:
@@ -18,7 +19,7 @@ except ImportError:
 
 from core.api_client import get_api_client
 
-st.title("⚙️ Настройки SignFinder")
+st.title(t("settings_title"))
 
 LANGUAGES = ["ru", "en", "pl", "mk"]
 API_BASE = os.environ.get("API_URL", "http://api:8000")
@@ -147,14 +148,9 @@ def _on_provider_change() -> None:
     _autosave_mail()
 
 
-tab_templates, tab_prompts, tab_signer, tab_markers, tab_llm, tab_mail, tab_test = st.tabs([
-    "📋 Шаблоны",
-    "🤖 Промпты",
-    "👤 Подписант",
-    "🔖 Маркеры",
-    "🧠 LLM",
-    "📧 Mail",
-    "🧪 Тестирование",
+tab_templates, tab_prompts, tab_signer, tab_markers, tab_llm, tab_mail, tab_testing = st.tabs([
+    t("tab_templates"), t("tab_prompts"), t("tab_signer"), t("tab_markers"),
+    t("tab_llm"), t("tab_mail"), t("tab_testing"),
 ])
 
 
@@ -1063,7 +1059,7 @@ with tab_mail:
 # ══════════════════════════════════════════════════════════════════════════════
 # ТАБ 5: Тестирование (v1.15)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_test:
+with tab_testing:
     import os as _os
     import requests as _req
     from core.test_runner import run_quick_tests, run_integration_tests, run_full_eval

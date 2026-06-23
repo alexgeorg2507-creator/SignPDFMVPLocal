@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 import requests
 import streamlit as st
 
+from core.i18n import t
+
 try:
     import zoneinfo
     _TZ = zoneinfo.ZoneInfo("Asia/Tbilisi")
@@ -22,7 +24,7 @@ except Exception:
 
 
 if not st.session_state.get("auth"):
-    st.warning("Войдите через главную страницу.")
+    st.warning(t("warn_login_required"))
     st.stop()
 
 try:
@@ -92,7 +94,6 @@ def _send_to_razbor(uid: str, orig: dict, item: dict) -> None:
     import re as _re
     pdf_bytes = base64.b64decode(orig["b64"])
 
-    # Сопоставить оригинал (имя слугифицировано на диске) с документом в очереди.
     docs = item.get("documents", [])
     oname = orig["name"]
     matched = next((d for d in docs if d.get("name") == oname), None)
@@ -155,54 +156,54 @@ def _read_log(n: int = 100) -> list[dict]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-st.title("📧 Агент Mail")
+st.title(t("agent_title"))
 
 status = _api_get("/v1/agent/status")
 if status.get("_timeout"):
-    st.info("⏳ API занят — возможно идёт обработка писем. Нажмите «Обновить» через ~30 сек.")
+    st.info(t("agent_timeout"))
 elif status.get("error"):
-    st.warning(f"Агент недоступен: {status['error']}")
+    st.warning(t("agent_unavailable", err=status['error']))
 else:
     _polling = bool(status.get("running"))
     c1, c2, c3, c4 = st.columns(4)
     if _polling:
-        c1.metric("Статус", "🔄 Идёт опрос…")
+        c1.metric(t("metric_status"), t("status_polling"))
     else:
-        c1.metric("Статус", "🟢 Работает" if status.get("imap_configured") else "⚠️ IMAP не настроен")
-    c2.metric("Последний опрос", _fmt_dt(status.get("last_poll")))
-    c3.metric("Обработано (посл.)", status.get("last_poll_count", 0))
-    c4.metric("В очереди", status.get("queue_count", "?"))
+        c1.metric(t("metric_status"),
+                  t("status_ok") if status.get("imap_configured") else t("status_no_imap"))
+    c2.metric(t("metric_last_poll"), _fmt_dt(status.get("last_poll")))
+    c3.metric(t("metric_last_count"), status.get("last_poll_count", 0))
+    c4.metric(t("metric_queue"), status.get("queue_count", "?"))
     if _polling:
-        st.info("🔄 Опрос идёт в фоне. Нажмите «Обновить» через ~30 сек, чтобы увидеть новые письма.")
+        st.info(t("info_polling"))
     if not status.get("imap_configured"):
-        st.info("Настройте IMAP_HOST, IMAP_USER, IMAP_PASSWORD в `.env` и пересоберите агент.")
+        st.info(t("info_imap_hint"))
 
-tab_queue, tab_log = st.tabs(["📋 Очередь разбора", "📜 Журнал"])
+tab_queue, tab_log = st.tabs([t("tab_queue"), t("tab_log")])
 
 # ── ОЧЕРЕДЬ ───────────────────────────────────────────────────────────────────
 with tab_queue:
     col_h, col_btn, col_refresh = st.columns([4, 2, 2])
     with col_h:
-        st.subheader("Письма, требующие проверки оператором")
+        st.subheader(t("queue_title"))
     with col_btn:
-        if st.button("📨 Опросить почту сейчас", use_container_width=True):
+        if st.button(t("btn_poll_now"), use_container_width=True):
             res = _api_post("/v1/agent/poll-now")
             if "error" in res:
-                st.error(f"Ошибка: {res['error']}")
+                st.error(t("err_poll", err=res['error']))
             elif res.get("status") == "already_running":
-                st.warning("🔄 Опрос уже идёт — дождитесь завершения.")
+                st.warning(t("warn_poll_running"))
             else:
-                st.info("⏳ Опрос запущен в фоне. Письма появятся по мере обработки — "
-                        "нажмите «Обновить» через ~30 сек.")
+                st.info(t("info_poll_started"))
     with col_refresh:
-        if st.button("🔄 Обновить", use_container_width=True, key="queue_refresh"):
+        if st.button(t("btn_refresh"), use_container_width=True, key="queue_refresh"):
             st.rerun()
 
     queue = _read_queue()
     items = queue.get("items", [])
 
     if not items:
-        st.info("Очередь пуста.")
+        st.info(t("queue_empty"))
     else:
         for item in items:
             uid = item.get("uid", "")
@@ -212,8 +213,8 @@ with tab_queue:
             docs = item.get("documents", [])
 
             with st.container(border=True):
-                st.markdown(f"**{subject or '(без темы)'}**")
-                st.caption(f"От: {sender}  ·  {received}  ·  PDF: {len(docs)}")
+                st.markdown(f"**{subject or t('lbl_no_subject')}**")
+                st.caption(f"{t('lbl_from')} {sender}  ·  {received}  ·  {t('lbl_pdf_count')} {len(docs)}")
                 for doc in docs:
                     light = doc.get("light", "yellow")
                     tpl = (doc.get("template") or "")[:8]
@@ -225,36 +226,36 @@ with tab_queue:
                 cb1, cb2, cb3, cb4 = st.columns(4)
 
                 with cb1:
-                    if st.button("✅ Подтвердить", key=f"confirm_{uid}",
+                    if st.button(t("btn_confirm"), key=f"confirm_{uid}",
                                  use_container_width=True, type="primary"):
                         res = _api_post("/v1/agent/resolve", {"uid": uid, "action": "confirm"})
                         if "error" in res:
                             st.error(res["error"])
                         else:
-                            st.success("→ Green")
+                            st.success(t("ok_confirm"))
                             st.rerun()
 
                 with cb2:
-                    if st.button("❌ Отклонить", key=f"reject_{uid}", use_container_width=True):
+                    if st.button(t("btn_reject"), key=f"reject_{uid}", use_container_width=True):
                         res = _api_post("/v1/agent/resolve", {"uid": uid, "action": "reject"})
                         if "error" in res:
                             st.error(res["error"])
                         else:
-                            st.warning("→ Red")
+                            st.warning(t("ok_reject"))
                             st.rerun()
 
                 with cb3:
-                    if st.button("📥 Загрузить", key=f"load_{uid}", use_container_width=True):
+                    if st.button(t("btn_load"), key=f"load_{uid}", use_container_width=True):
                         st.session_state[f"_loaded_{uid}"] = _api_get(f"/v1/agent/queue/{uid}")
 
                 with cb4:
-                    if st.button("✏️ В разбор", key=f"razbor_{uid}", use_container_width=True):
+                    if st.button(t("btn_to_review"), key=f"razbor_{uid}", use_container_width=True):
                         _rd = _api_get(f"/v1/agent/queue/{uid}")
                         _origs = _rd.get("original_pdfs", [])
                         if _origs:
                             _send_to_razbor(uid, _origs[0], _rd.get("item", item))
                         else:
-                            st.warning("⚠️ Оригиналы недоступны (старое письмо).")
+                            st.warning(t("warn_no_originals"))
 
                 data = st.session_state.get(f"_loaded_{uid}")
                 if data:
@@ -263,24 +264,26 @@ with tab_queue:
                                            file_name=sp["name"], mime="application/pdf",
                                            key=f"dl_{uid}_{sp['name']}")
 
-                    st.caption("Переразметить и переподписать вручную:")
+                    st.caption(t("lbl_resign"))
                     for orig in data.get("original_pdfs", []):
                         if st.button(f"✏️ {orig['name']}", key=f"resign_{uid}_{orig['name']}",
                                      use_container_width=True):
                             _send_to_razbor(uid, orig, data.get("item", {}))
                     if not data.get("original_pdfs"):
-                        st.caption("⚠️ Оригиналы недоступны (старое письмо).")
+                        st.caption(t("warn_no_originals"))
 
 # ── ЖУРНАЛ ────────────────────────────────────────────────────────────────────
 with tab_log:
     col_h2, col_flt, col_btn2 = st.columns([4, 3, 2])
     with col_h2:
-        st.subheader("История обработки")
+        st.subheader(t("log_title"))
     with col_flt:
-        filter_light = st.selectbox("Фильтр", ["все", "🟢 green", "🟡 yellow", "🔴 no_Match"],
+        _all_label = t("log_filter_all")
+        filter_light = st.selectbox(t("log_filter"),
+                                    [_all_label, "🟢 green", "🟡 yellow", "🔴 no_match"],
                                     label_visibility="collapsed")
     with col_btn2:
-        if st.button("🔄 Обновить", use_container_width=True):
+        if st.button(t("btn_refresh"), use_container_width=True):
             st.rerun()
 
     light_map = {"🟢 green": "green", "🟡 yellow": "yellow", "🔴 no_match": "no_match"}
@@ -290,9 +293,17 @@ with tab_log:
         entries = [e for e in entries if any(p.get("light") == flt for p in e.get("pdfs", []))]
 
     if not entries:
-        st.info("Журнал пуст.")
+        st.info(t("log_empty"))
     else:
         import pandas as pd
+        _col_time    = t("col_time_log")
+        _col_subject = t("col_subject")
+        _col_pdf     = t("col_pdf")
+        _col_status  = t("col_status")
+        _col_tpl     = t("col_template")
+        _col_score   = t("col_score")
+        _col_dest    = t("col_dest")
+        _col_error   = t("col_error")
         rows = []
         for e in reversed(entries):
             pdfs = e.get("pdfs", [])
@@ -300,14 +311,14 @@ with tab_log:
             templates = list({(p.get("template") or "")[:8] for p in pdfs if p.get("template")})
             scores = [p.get("score") for p in pdfs if p.get("score") is not None]
             rows.append({
-                "Время": _fmt_dt(e.get("ts")),
-                "Тема": (e.get("subject") or "")[:40],
-                "PDF": len(pdfs),
-                "Статус": " ".join(lights),
-                "Шаблон": ", ".join(templates) or "—",
-                "Score": f"{int(scores[0]*100)}%" if scores else "—",
-                "→ Папка": (e.get("destination") or "").replace("Signfinder", ""),
-                "Ошибка": (e.get("error") or "")[:40],
+                _col_time:    _fmt_dt(e.get("ts")),
+                _col_subject: (e.get("subject") or "")[:40],
+                _col_pdf:     len(pdfs),
+                _col_status:  " ".join(lights),
+                _col_tpl:     ", ".join(templates) or "—",
+                _col_score:   f"{int(scores[0]*100)}%" if scores else "—",
+                _col_dest:    (e.get("destination") or "").replace("Signfinder", ""),
+                _col_error:   (e.get("error") or "")[:40],
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 

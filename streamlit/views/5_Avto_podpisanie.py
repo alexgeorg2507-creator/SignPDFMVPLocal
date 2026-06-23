@@ -4,7 +4,7 @@
   Пакет         — загрузка до 100 PDF, batch-анализ, таблица результатов
   Разбор        — одиночный разбор/правка/подпись (логика v1.11)
   Тестирование — заглушка (v1.13)
-«Пакет» кидает выбранный жёлтый док в «Разбор» через razbor_pending.
+«Пакет» кидает выбранный жёлтый dok в «Разбор» через razbor_pending.
 v1.14.0: preview показывает маркер места подписи из sign_mode.
 """
 import io
@@ -20,6 +20,8 @@ from uuid import uuid4
 import requests
 import streamlit as st
 import streamlit.components.v1 as _components
+
+from core.i18n import t
 
 SUPPORTED_LANGUAGES = ("ru", "en", "pl", "mk")
 API_BASE = os.environ.get("API_URL", "http://api:8000")
@@ -58,7 +60,7 @@ def _build_template_name(our_side: dict, language: str) -> str:
 
 
 if not st.session_state.get("auth"):
-    st.warning("Войдите через главную страницу.")
+    st.warning(t("warn_login_required"))
     st.stop()
 
 try:
@@ -109,7 +111,7 @@ if "signature_png" not in st.session_state:
         sys.stderr.write(f"[auto_sign] signature preload: {_e}\n")
 
 if not st.session_state.get("signature_png"):
-    st.error("Подпись не загружена. Загрузите PNG подписи в Настройках (таб Подписант).")
+    st.error(t("warn_no_signature"))
     st.stop()
 
 if "upload_counter" not in st.session_state:
@@ -292,16 +294,16 @@ def _save_template():
             },
             "signature_scale": st.session_state.get("sig_scale_slider", 1.0),
         })
-        st.success(f"Шаблон сохранён: `{template_name}` (id: {(returned_id or tid)[:8]}…)")
+        st.success(t("ok_tpl_saved", name=template_name, id=(returned_id or tid)[:8]))
     except Exception as e:
-        st.error(f"Ошибка сохранения шаблона: {e}")
+        st.error(t("err_tpl_save", err=e))
         sys.stderr.write(f"[auto_sign] _save_template: {e}\n")
 
 
 def _render_debug_export_block() -> None:
     if not st.session_state.get("auto_doc"):
         return
-    with st.expander("🔬 Диагностический экспорт", expanded=False):
+    with st.expander(t("dbg_export"), expanded=False):
         analyze_result = st.session_state.get("auto_analyze_result", {})
         doc = st.session_state.get("auto_doc")
         anchors_now = st.session_state.get("all_anchors", [])
@@ -327,13 +329,13 @@ def _render_debug_export_block() -> None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         base = re.sub(r"[^A-Za-z0-9_-]", "_",
                       st.session_state.get("auto_doc_name", "doc").rsplit(".", 1)[0])[:60] or "doc"
-        st.download_button("📥 Скачать JSON", data=json_str.encode("utf-8"),
+        st.download_button(t("dbg_download"), data=json_str.encode("utf-8"),
                            file_name=f"signfinder_debug_{base}_{ts}.json",
                            mime="application/json", key="dl_debug",
                            type="primary", use_container_width=True)
-        st.toggle("📋 Показать как текст", key="dbg_show_text")
+        st.toggle(t("dbg_show_text"), key="dbg_show_text")
         if st.session_state.get("dbg_show_text"):
-            st.caption(f"Размер: {len(json_str.encode()) / 1024:.1f} KB")
+            st.caption(t("dbg_size", kb=f"{len(json_str.encode()) / 1024:.1f}"))
             st.code(json_str, language="json")
 
 
@@ -383,17 +385,17 @@ def _ingest_pending_from_batch():
             sys.stderr.write(f"[auto_sign] batch green scale fetch: {_e}\n")
 
 
-st.title("🤖 Разбор и подписание")
+st.title(t("review_title"))
 _ingest_pending_from_batch()
-st.caption("Загрузи договор — система найдёт места подписи. Дорисуй если нужно → скачай PDF.")
+st.caption(t("review_caption"))
 
 
 if st.session_state.get("auto_doc_name"):
     col_fname, col_new = st.columns([5, 2])
     with col_fname:
-        st.caption(f"📄 Текущий документ: **{st.session_state['auto_doc_name']}**")
+        st.caption(f"{t('lbl_current_doc')} **{st.session_state['auto_doc_name']}**")
     with col_new:
-        if st.button("📄 Загрузить договор", key="btn_new_doc", use_container_width=True):
+        if st.button(t("btn_new_doc"), key="btn_new_doc", use_container_width=True):
             _reset_pipeline()
             st.session_state["upload_counter"] += 1
             st.session_state["_trigger_upload"] = True
@@ -409,7 +411,7 @@ if st.session_state.pop("_trigger_upload", False):
         height=0,
     )
 uploaded = st.file_uploader(
-    "Загрузить договор", type=["pdf", "docx"], key=uploader_key,
+    t("uploader_label"), type=["pdf", "docx"], key=uploader_key,
     disabled=_doc_loaded,
     label_visibility="collapsed" if _doc_loaded else "visible",
 )
@@ -418,34 +420,34 @@ if uploaded is not None and st.session_state.get("auto_doc_name") != uploaded.na
     _reset_pipeline()
     st.session_state["auto_doc_name"] = uploaded.name
 
-    with st.status("Анализирую документ...", expanded=True) as status:
+    with st.status(t("status_analyzing"), expanded=True) as status:
         parse_ok = True
 
-        st.write("📄 Шаг 1: Парсинг...")
+        st.write(t("step_parsing"))
         from core.parser import parse_document
         try:
             doc = parse_document(uploaded.getvalue(), uploaded.name)
             st.session_state["auto_doc"] = doc
-            st.write(f"✅ Страниц: {len(doc.pages)}")
+            st.write(t("step_parsed_ok", n=len(doc.pages)))
         except Exception as e:
-            status.update(label="❌ Ошибка парсинга", state="error")
+            status.update(label=t("err_parsing"), state="error")
             st.error(str(e))
             parse_ok = False
 
         if parse_ok:
-            st.write("🌐 Шаг 2: Язык...")
+            st.write(t("step_language"))
             from core.language_detector import detect_language
             lang = detect_language(doc)
             if lang not in SUPPORTED_LANGUAGES:
-                status.update(label="❌ Язык не поддерживается", state="error")
-                st.error(f"Поддерживаем ru/en/pl/mk. Определён: {lang or '?'}")
+                status.update(label=t("err_lang_unsupported"), state="error")
+                st.error(t("err_lang_detail", lang=lang or "?"))
                 parse_ok = False
             else:
                 st.session_state["auto_language"] = lang
-                st.write(f"✅ Язык: **{lang}**")
+                st.write(t("step_lang_ok", lang=lang))
 
         if parse_ok:
-            st.write("🔎 Шаги 0–5: Анализ через signfinder-api...")
+            st.write(t("step_analysis"))
             try:
                 client = get_api_client()
                 result = client.analyze(doc.pdf_bytes, language=lang, filename=uploaded.name)
@@ -454,8 +456,8 @@ if uploaded is not None and st.session_state.get("auto_doc_name") != uploaded.na
                 tl = result.get("traffic_light", "no_match")
 
                 if tl == "no_match":
-                    status.update(label="❌ Документ не обработан", state="error")
-                    st.error(f"❌ Не удалось обработать документ: {result.get('error', 'неизвестная ошибка')}")
+                    status.update(label=t("err_doc_failed"), state="error")
+                    st.error(t("err_doc_detail", err=result.get('error', 'неизвестная ошибка')))
                     st.stop()
 
                 anchors = [_make_anchor(a) for a in (result.get("anchors") or [])]
@@ -494,20 +496,20 @@ if uploaded is not None and st.session_state.get("auto_doc_name") != uploaded.na
                     except Exception as _e:
                         sys.stderr.write(f"[auto_sign] green scale fetch: {_e}\n")
                         tpl_display = mt['best_match_template_id'][:8] + "…"
-                    st.write(f"🟢 Применён шаблон «{tpl_display}» ({pct}%) · якорей: {len(anchors)}")
+                    st.write(t("step_green", name=tpl_display, pct=pct, n=len(anchors)))
                 elif anchors:
-                    st.write(f"🟡 Полный анализ · якорей: {len(anchors)}")
+                    st.write(t("step_yellow", n=len(anchors)))
                 else:
-                    st.write("⚠️ Анализ завершён, мест подписи не найдено")
+                    st.write(t("step_no_anchors"))
 
                 if result.get("error"):
-                    st.warning(f"Предупреждение API: {result['error']}")
+                    st.warning(t("warn_api", msg=result['error']))
 
-                status.update(label="✅ Готово", state="complete")
+                status.update(label=t("status_done"), state="complete")
 
             except Exception as e:
-                status.update(label="❌ Ошибка анализа", state="error")
-                st.error(f"POST /v1/analyze: {e}")
+                status.update(label=t("status_err_analysis"), state="error")
+                st.error(t("err_analyze_api", err=e))
                 sys.stderr.write(f"[auto_sign] client.analyze: {e}\n")
 
 
@@ -521,16 +523,16 @@ if "auto_analyze_result" in st.session_state and "all_anchors" in st.session_sta
         pct = int((mt.get("best_match_score") or 0) * 100)
         tpl_display = st.session_state.get("applied_template_name") or mt['best_match_template_id'][:8] + "…"
         with st.container(border=True):
-            st.success(f"🟢 Шаблон «{tpl_display}» применён автоматически (совпадение {pct}%)")
+            st.success(t("banner_green", name=tpl_display, pct=pct))
     else:
         entity = our_side.get("legal_entity", "")
         signer_name = our_side.get("signer", "")
         with st.container(border=True):
             if entity:
-                st.warning(f"🟡 Полный анализ · {entity} / {signer_name}")
+                st.warning(t("banner_yellow_side", entity=entity, signer=signer_name))
             else:
-                st.info("🟡 Шаблонов не найдено — выполнен полный поиск")
-        if st.button("🔄 Повторить анализ", key="btn_reanalyze"):
+                st.info(t("banner_yellow_no_tpl"))
+        if st.button(t("btn_reanalyze"), key="btn_reanalyze"):
             _reset_pipeline()
             st.session_state["upload_counter"] += 1
             st.rerun()
@@ -546,7 +548,7 @@ all_anchors: list = st.session_state["all_anchors"]
 current_page: int = st.session_state.get("current_page", 0)
 
 st.divider()
-st.subheader("2️⃣ Превью и доразметка")
+st.subheader(t("section_preview"))
 
 # Масштаб подписи — единый на весь документ. Слайдер ВЫШЕ превью, чтобы его
 # значение применялось к превью сразу (на всех страницах одинаково).
@@ -555,25 +557,25 @@ st.subheader("2️⃣ Превью и доразметка")
 if "sig_scale_slider" not in st.session_state:
     st.session_state["sig_scale_slider"] = 1.0
 sig_scale = st.slider(
-    "Масштаб подписи (на весь документ)",
+    t("slider_scale"),
     min_value=0.5, max_value=3.0, step=0.1,
     format="%.1f×",
-    help="1.0 = 15мм высота (42pt). 0.5 = 7.5мм, 2.0 = 30мм. Применяется ко всем страницам.",
+    help=t("slider_scale_help"),
     key="sig_scale_slider",
 )
 
 page_anchors = _anchors_for_page(all_anchors, current_page, total_pages)
 
 if page_anchors:
-    st.write(f"Места подписи на стр. {current_page + 1}:")
+    st.write(t("lbl_anchors_on_page", n=current_page + 1))
     ca, cn, _ = st.columns([1, 1, 4])
     with ca:
-        if st.button("✅ Все", key="en_all"):
+        if st.button(t("btn_all_on"), key="en_all"):
             for a in page_anchors:
                 st.session_state[f"anchor_enabled_{a.id}"] = True
             st.rerun()
     with cn:
-        if st.button("☐ Снять", key="dis_all"):
+        if st.button(t("btn_all_off"), key="dis_all"):
             for a in page_anchors:
                 st.session_state[f"anchor_enabled_{a.id}"] = False
             st.rerun()
@@ -592,11 +594,12 @@ if page_anchors:
                 st.session_state["all_anchors"] = [a for a in all_anchors if a.id != anchor.id]
                 st.rerun()
 else:
-    st.caption(f"На стр. {current_page + 1} мест подписи нет.")
+    st.caption(t("lbl_no_anchors_page", n=current_page + 1))
 
-canvas_mode_label = st.radio("Режим", ["👁 Просмотр / drag", "✏️ Добавить место подписи"],
+canvas_mode_label = st.radio(t("radio_canvas_mode"),
+                              [t("mode_view"), t("mode_add")],
                               horizontal=True, key="canvas_mode_radio")
-mode_key = "add" if "Добавить" in canvas_mode_label else "view"
+mode_key = "add" if t("mode_add") in canvas_mode_label else "view"
 
 nav1, nav2, nav3, nav4 = st.columns([1, 2, 2, 1])
 with nav1:
@@ -604,9 +607,9 @@ with nav1:
         st.session_state["current_page"] = max(0, current_page - 1)
         st.rerun()
 with nav2:
-    st.markdown(f"**Стр. {current_page + 1}** из {total_pages}")
+    st.markdown(t("lbl_page", cur=current_page + 1, total=total_pages))
 with nav3:
-    jump = st.number_input("Перейти", min_value=1, max_value=total_pages,
+    jump = st.number_input(t("lbl_jump_to"), min_value=1, max_value=total_pages,
                            value=current_page + 1, label_visibility="collapsed",
                            key=f"pg_jump_{current_page}")
     if jump - 1 != current_page:
@@ -673,17 +676,17 @@ try:
                         st.session_state["all_anchors"].append(_make_anchor(new_d))
                         st.rerun()
                     else:
-                        st.warning("Нет текста в этой точке.")
+                        st.warning(t("warn_no_text"))
                 except Exception as e:
-                    st.error(f"Ошибка добавления якоря: {e}")
+                    st.error(t("err_anchor_add", err=e))
     else:
         st.image(img_bytes, use_container_width=True)
     _preview_rendered = True
 except Exception as e:
-    st.warning(f"Превью недоступно: {e}")
+    st.warning(t("warn_preview", err=e))
 
 if mode_key == "add" and not _preview_rendered:
-    st.caption("Ручной ввод координат:")
+    st.caption(t("lbl_manual_coords"))
     mx_col, my_col, madd_col = st.columns([2, 2, 1])
     with mx_col:
         mx = st.number_input("X (pt)", min_value=0.0, value=100.0, key="man_x")
@@ -704,34 +707,34 @@ if mode_key == "add" and not _preview_rendered:
                     st.session_state["all_anchors"].append(_make_anchor(a_d))
                     st.rerun()
                 else:
-                    st.warning("Нет текста в этой точке.")
+                    st.warning(t("warn_no_text"))
             except Exception as e:
                 st.error(str(e))
 
 st.divider()
-st.subheader("7️⃣ Скачать подписанный PDF")
+st.subheader(t("section_download"))
 
 auto_n = sum(1 for a in all_anchors if a.added_by == "auto_regex")
 manual_n = sum(1 for a in all_anchors if a.added_by == "manual_click")
 enabled_n = sum(1 for a in all_anchors if st.session_state.get(f"anchor_enabled_{a.id}", True))
-st.caption(f"{auto_n} auto + {manual_n} manual = {len(all_anchors)} якорей · включено: {enabled_n}")
+st.caption(t("caption_anchors_stat", auto=auto_n, manual=manual_n, total=len(all_anchors), enabled=enabled_n))
 
 if enabled_n == 0:
-    st.warning("Нет включённых мест подписи.")
+    st.warning(t("warn_no_enabled"))
 else:
-    st.caption(f"Масштаб подписи: **{sig_scale:.1f}×** (меняется слайдером в разделе превью)")
-    if st.button("⬇ Подписать и скачать", type="primary", key="btn_sign"):
+    st.caption(t("caption_scale", scale=f"{sig_scale:.1f}"))
+    if st.button(t("btn_sign_download"), type="primary", key="btn_sign"):
         try:
             st.session_state["auto_signed_pdf"] = _build_signed_pdf(signature_scale=sig_scale)
         except Exception as e:
-            st.error(f"Ошибка подписания: {e}")
+            st.error(t("err_signing", err=e))
     if "auto_signed_pdf" in st.session_state:
         fname = st.session_state.get("auto_doc_name", "doc").rsplit(".", 1)[0]
-        st.download_button("💾 Сохранить PDF", data=st.session_state["auto_signed_pdf"],
+        st.download_button(t("btn_save_pdf"), data=st.session_state["auto_signed_pdf"],
                            file_name=f"{fname}_signed.pdf", mime="application/pdf", key="dl_signed")
 
 st.divider()
-st.subheader("💾 Сохранение шаблона")
+st.subheader(t("section_save_tpl"))
 
 has_manual = any(a.added_by == "manual_click" for a in all_anchors)
 lang_h = st.session_state.get("auto_language", "ru")
@@ -748,33 +751,33 @@ except Exception:
     from datetime import date
     def_name = f"Договор {lang_h} ({date.today().strftime('%d.%m.%Y')})"
 
-st.text_input("Имя шаблона", value=def_name, key="template_name_input")
-_lbl = "💾 Сохранить шаблон (рекомендуется — есть ручные якоря)" if has_manual else "💾 Сохранить шаблон"
+st.text_input(t("lbl_tpl_name"), value=def_name, key="template_name_input")
+_lbl = t("btn_save_tpl_manual") if has_manual else t("btn_save_tpl")
 
 applied_tid = ar_now.get("applied_template_id")
 if applied_tid and has_manual:
-    st.info("Применённый шаблон был расширен ручными якорями. Что делать?")
+    st.info(t("info_tpl_manual"))
     vc1, vc2, vc3 = st.columns(3)
     with vc1:
-        if st.button("💾 Обновить существующий", key="btn_upd_tpl"):
+        if st.button(t("btn_update_tpl"), key="btn_upd_tpl"):
             try:
                 from core.template_storage import add_anchors_to_template
                 manual_dicts = [_anchor_to_dict(a) for a in all_anchors if a.added_by == "manual_click"]
                 add_anchors_to_template(applied_tid, manual_dicts, increment_version=False)
-                st.success("Шаблон обновлён.")
+                st.success(t("ok_tpl_updated"))
             except Exception as e:
                 st.error(f"Ошибка: {e}")
     with vc2:
-        if st.button("🆕 Новая версия", key="btn_new_ver"):
+        if st.button(t("btn_new_version"), key="btn_new_ver"):
             try:
                 from core.template_storage import add_anchors_to_template
                 manual_dicts = [_anchor_to_dict(a) for a in all_anchors if a.added_by == "manual_click"]
                 new_id = add_anchors_to_template(applied_tid, manual_dicts, increment_version=True)
-                st.success(f"Создана новая версия: {new_id[:8]}…")
+                st.success(t("ok_tpl_new_ver", id=new_id[:8]))
             except Exception as e:
                 st.error(f"Ошибка: {e}")
     with vc3:
-        if st.button("✗ Не сохранять", key="btn_no_save_ver"):
+        if st.button(t("btn_no_save"), key="btn_no_save_ver"):
             ar_now.pop("applied_template_id", None)
             st.rerun()
 
