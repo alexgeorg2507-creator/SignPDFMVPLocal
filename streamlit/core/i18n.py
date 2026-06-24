@@ -36,8 +36,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                    "Жёлтые отправь в «Разбор» для проверки оператором.",
                              "en": "Upload up to 100 contracts — the system will analyse them as a batch. "
                                    "Send yellow ones to «Review» for operator check."},
-    "batch_uploader":       {"ru": "Загрузить договоры (PDF/DOCX, до 100)",
-                             "en": "Upload contracts (PDF/DOCX, up to 100)"},
+    "batch_uploader":       {"ru": "Загрузить договоры (PDF/DOCX, до 100 файлов · до 30 МБ каждый)",
+                             "en": "Upload contracts (PDF/DOCX, up to 100 files · 30 MB each)"},
     "batch_btn_run":        {"ru": "▶ Анализировать ({n})", "en": "▶ Analyse ({n})"},
     "batch_btn_reset":      {"ru": "🗑 Сбросить",  "en": "🗑 Reset"},
     "batch_err_max":        {"ru": "Максимум {max} файлов. Загружено: {n}.",
@@ -92,7 +92,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                              "en": "No signature loaded. Upload signature PNG in Settings (Signatory tab)."},
     "lbl_current_doc":      {"ru": "📄 Текущий документ:", "en": "📄 Current document:"},
     "btn_new_doc":          {"ru": "📄 Загрузить договор", "en": "📄 Upload contract"},
-    "uploader_label":       {"ru": "Загрузить договор",   "en": "Upload contract"},
+    "uploader_label":       {"ru": "Загрузить договор (PDF/DOCX, до 30 МБ)",
+                             "en": "Upload contract (PDF/DOCX, up to 30 MB)"},
+    "limit_hint":           {"ru": "Договоры свыше 30 страниц обрабатываются полностью, "
+                                   "но ревью проверяет начало и конец.",
+                             "en": "Contracts over 30 pages are fully processed, "
+                                   "but review checks start and end."},
     "status_analyzing":     {"ru": "Анализирую документ...", "en": "Analysing document..."},
     "step_parsing":         {"ru": "📄 Шаг 1: Парсинг...", "en": "📄 Step 1: Parsing..."},
     "step_parsed_ok":       {"ru": "✅ Страниц: {n}",      "en": "✅ Pages: {n}"},

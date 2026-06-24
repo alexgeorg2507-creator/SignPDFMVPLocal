@@ -477,6 +477,8 @@ uploaded = st.file_uploader(
     disabled=_doc_loaded,
     label_visibility="collapsed" if _doc_loaded else "visible",
 )
+if not _doc_loaded:
+    st.caption(t("limit_hint"))
 
 with_review = st.toggle(
     t("review_toggle"),

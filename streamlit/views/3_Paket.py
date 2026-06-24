@@ -68,6 +68,7 @@ uploaded = st.file_uploader(
     accept_multiple_files=True,
     key=uploader_key,
 )
+st.caption(t("limit_hint"))
 
 col_run, col_reset = st.columns([2, 1])
 with col_run:

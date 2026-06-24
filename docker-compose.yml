@@ -42,6 +42,7 @@ services:
       ACCESS_CODE: ${ACCESS_CODE}
       API_URL: http://api:8000
       AGENT_DATA_DIR: /app/agent_data
+      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "30"
     volumes:
       - ./data/streamlit-config:/app/config
       - ./data/api/agent:/app/agent_data
