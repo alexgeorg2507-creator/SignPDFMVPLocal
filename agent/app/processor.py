@@ -240,48 +240,44 @@ _LIGHT_LABEL = {
     "no_match": "🔴 Ошибка обработки",
 }
 
-_REVIEW_LIGHT_LABEL = {
-    "green": "🟢 Договор целостен",
-    "yellow": "🟡 Есть замечания",
-    "red": "🔴 Серьёзные замечания",
-}
-
-_AXIS_LABEL = {
-    "parties": "Стороны", "subject": "Предмет", "term": "Сроки",
-    "payment": "Расчёты", "liability": "Ответственность",
-    "signatures": "Подписи", "contradiction": "Противоречия", "other": "Прочее",
-}
-
-_SEV_ICON = {"critical": "🔴", "warning": "🟡", "info": "ℹ️"}
-
-
 def _format_review(review: Optional[dict]) -> list[str]:
-    """Сформировать строки замечаний по договору для письма."""
+    """Замечания по договору для письма — нумерованные разделы."""
     if not review:
         return []
     err = review.get("error")
     if err:
-        return [f"   📋 Ревью: недоступно ({err})"]
+        return [f"   Ревью: недоступно ({err})"]
 
-    lines = []
     tl = review.get("traffic_light", "yellow")
-    lines.append(f"   📋 Ревью: {_REVIEW_LIGHT_LABEL.get(tl, tl)}")
+    tl_label = {
+        "green": "Договор целостен",
+        "yellow": "Есть замечания",
+        "red": "Серьёзные замечания",
+    }.get(tl, tl)
 
+    lines = [f"   Ревью договора: {tl_label}"]
     summary = review.get("summary", "")
     if summary:
-        lines.append(f"      {summary}")
+        lines.append(f"   {summary}")
 
     findings = review.get("findings", [])
-    for f in findings:
-        axis = _AXIS_LABEL.get(f.get("axis", "other"), f.get("axis", ""))
-        icon = _SEV_ICON.get(f.get("severity", "info"), "ℹ️")
-        note = f.get("note", "")
-        clause = f.get("clause")
-        clause_txt = f" (п. {clause})" if clause else ""
-        lines.append(f"      {icon} {axis}{clause_txt}: {note}")
+    remarks = [f for f in findings if f.get("severity") in ("critical", "warning")]
+    recs = [f for f in findings if f.get("severity") == "info"]
+
+    if remarks:
+        lines.append("   1. Замечания")
+        for i, f in enumerate(remarks, 1):
+            clause = f" (п. {f.get('clause')})" if f.get("clause") else ""
+            lines.append(f"   1.{i}. {f.get('note', '')}{clause}")
+    if recs:
+        sec = 2 if remarks else 1
+        lines.append(f"   {sec}. Рекомендации")
+        for i, f in enumerate(recs, 1):
+            clause = f" (п. {f.get('clause')})" if f.get("clause") else ""
+            lines.append(f"   {sec}.{i}. {f.get('note', '')}{clause}")
 
     if review.get("truncated"):
-        lines.append("      ⚠️ Большой документ — проверены начало и конец.")
+        lines.append("   ⚠️ Большой документ — проверены начало и конец.")
 
     return lines
 

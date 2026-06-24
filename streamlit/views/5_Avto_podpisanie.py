@@ -338,28 +338,45 @@ def _render_review(review: dict | None) -> None:
     if review.get("truncated"):
         st.caption(t("review_truncated"))
 
-    # Замечания
+    # Нумерованный блок замечаний (с кнопкой копирования через st.code)
     findings = review.get("findings", [])
     if not findings:
         st.caption(t("review_no_findings"))
         return
 
-    axis_label = {
-        "parties": t("axis_parties"), "subject": t("axis_subject"),
-        "term": t("axis_term"), "payment": t("axis_payment"),
-        "liability": t("axis_liability"), "signatures": t("axis_signatures"),
-        "contradiction": t("axis_contradiction"), "other": t("axis_other"),
-    }
-    sev_icon = {"critical": "🔴", "warning": "🟡", "info": "ℹ️"}
+    lang = st.session_state.get("lang", "ru")
+    numbered = _format_findings_numbered(findings, lang)
+    if numbered:
+        # st.code даёт моноширинный блок с иконкой "копировать" в углу
+        st.code(numbered, language=None)
 
-    for f in findings:
-        axis = axis_label.get(f.get("axis", "other"), f.get("axis", ""))
-        sev = f.get("severity", "info")
-        icon = sev_icon.get(sev, "ℹ️")
-        note = f.get("note", "")
-        clause = f.get("clause")
-        clause_txt = f" ({t('review_clause')} {clause})" if clause else ""
-        st.markdown(f"{icon} **{axis}**{clause_txt}: {note}")
+
+def _format_findings_numbered(findings: list, lang: str = "ru") -> str:
+    """Нумерованный список: 1.Замечания (critical/warning) / 2.Рекомендации (info)."""
+    labels = {
+        "ru": {"remarks": "Замечания", "recs": "Рекомендации", "clause": "п."},
+        "en": {"remarks": "Remarks", "recs": "Recommendations", "clause": "clause"},
+    }
+    lab = labels.get(lang, labels["ru"])
+
+    remarks = [f for f in findings if f.get("severity") in ("critical", "warning")]
+    recs = [f for f in findings if f.get("severity") == "info"]
+
+    lines: list[str] = []
+    if remarks:
+        lines.append(f"1. {lab['remarks']}")
+        for i, f in enumerate(remarks, 1):
+            clause = f" ({lab['clause']} {f.get('clause')})" if f.get("clause") else ""
+            lines.append(f"1.{i}. {f.get('note', '')}{clause}")
+    if recs:
+        if lines:
+            lines.append("")
+        sec = 2 if remarks else 1
+        lines.append(f"{sec}. {lab['recs']}")
+        for i, f in enumerate(recs, 1):
+            clause = f" ({lab['clause']} {f.get('clause')})" if f.get("clause") else ""
+            lines.append(f"{sec}.{i}. {f.get('note', '')}{clause}")
+    return "\n".join(lines)
 
 
 def _render_debug_export_block() -> None:
