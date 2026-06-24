@@ -59,7 +59,12 @@ def _get_sink():
 
 
 def ensure_all_folders() -> None:
-    """Создаёт все 5 IMAP-папок из конфига до первой обработки. Идемпотентно."""
+    """Создаёт все 5 IMAP-папок из конфига до первой обработки. Идемпотентно.
+
+    Закрывает соединение после себя — иначе недочитанные ответы CREATE
+    остаются в буфере и ломают последующий SELECT (рассинхрон tag'ов,
+    особенно на Mail.ru/Rambler).
+    """
     cfg = load_mail_config()
     src = _get_source()
     src._connect()
@@ -68,6 +73,7 @@ def ensure_all_folders() -> None:
             src._ensure_folder(cfg[key])
         except Exception as e:
             logger.warning("ensure_all_folders: %s (%s) failed: %s", key, cfg[key], e)
+    src.close()  # чистое соединение для poll() после ensure
 
 
 def poll_inbox() -> list:
