@@ -104,9 +104,23 @@ def _signature_for_current_doc():
 
 if "signature_png" not in st.session_state:
     try:
-        png = get_api_client().get_signature_png("default")
-        if png:
-            st.session_state["signature_png"] = png
+        # FIX: раньше проверялся только профиль "default" — если клиент
+        # завёл свой профиль подписанта (Настройки → Подписант → Создать)
+        # и загрузил подпись туда, эта проверка всегда падала с
+        # "Подпись не загружена", даже когда подпись реально есть.
+        # Теперь ищем ЛЮБОЙ профиль с подписью — далее по коду подпись
+        # для конкретного документа определяется через detected_signer_id.
+        _signers_r = requests.get(
+            f"{API_BASE}/v1/signers", headers=get_api_client()._headers, timeout=5,
+        )
+        _signers_list = _signers_r.json() if _signers_r.ok else []
+        _any_sig_signer = next(
+            (s["id"] for s in _signers_list if s.get("has_signature")), None,
+        )
+        if _any_sig_signer:
+            png = get_api_client().get_signature_png(_any_sig_signer)
+            if png:
+                st.session_state["signature_png"] = png
     except Exception as _e:
         sys.stderr.write(f"[auto_sign] signature preload: {_e}\n")
 
